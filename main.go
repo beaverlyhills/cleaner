@@ -40,6 +40,7 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 		if f.IsDir() {
 			return nil
 		}
+		fmt.Printf("Processing %s\n", path)
 		record := files[path]
 		if record != nil {
 			if f.Size() == record.Size && f.ModTime() == record.Modified && len(record.FileHash) > 0 {
@@ -54,7 +55,7 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 		}
 		imageHash, err := getImageHash(path)
 		if err != nil {
-			fmt.Printf("Not an image %s\n", path)
+			// fmt.Printf("Not an image %s\n", path)
 		}
 		dateShot, err := getMediaDate(path)
 		record = &FileMetadata{Path: path, Modified: f.ModTime(), Size: f.Size(), FileHash: fileHash, ImageHash: imageHash, DateShot: dateShot}
@@ -70,10 +71,10 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 func getMediaDate(path string) (time.Time, error) {
 	dateShot, err := getImageDate(path)
 	if err != nil {
-		fmt.Printf("No exif %s\n", path)
+		// fmt.Printf("No exif %s\n", path)
 		dateShot, err = getMovieDate(path)
 		if err != nil {
-			fmt.Printf("No moov %s\n", path)
+			// fmt.Printf("No moov %s\n", path)
 		}
 	}
 	return dateShot, err
@@ -95,7 +96,7 @@ func addFileToDB(dbFile string, record *FileMetadata) error {
 	if _, err = file.WriteString("\n"); err != nil {
 		return err
 	}
-	fmt.Printf("Saved metadata for %s\n", record.Path)
+	// fmt.Printf("Saved metadata for %s\n", record.Path)
 	return nil
 }
 
@@ -143,7 +144,7 @@ func getImageDate(path string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	datetime, err := getOriginalDateTime(x) // DateTime, DateTimeOriginal
+	datetime, err := getOriginalDateTime(x)
 	if err == nil {
 		return datetime, nil
 	}
@@ -182,7 +183,7 @@ func getMovieDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer f.Close()
-	fmt.Printf("Reading moov %s\n", path)
+	// fmt.Printf("Reading moov %s\n", path)
 	datetime, err := mov.Created(f)
 	if err == nil {
 		return datetime, nil
@@ -214,7 +215,7 @@ func readDB(path string) (map[string]*FileMetadata, map[string][]*FileMetadata, 
 			return nil, nil, err
 		}
 		if len(record.Path) > 0 {
-			fmt.Printf("Restored metadata for %s\n", record.Path)
+			// fmt.Printf("Restored metadata for %s\n", record.Path)
 			addRecord(files, hashes, &record)
 		}
 	}
