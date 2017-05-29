@@ -1,0 +1,7 @@
+package: github.com/beaverlyhills/cleaner
+import:
+- package: github.com/rwcarlsen/goexif
+  subpackages:
+  - exif
+  - tiff
+- package: s.mcquay.me/sm/mov
