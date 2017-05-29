@@ -59,8 +59,10 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 		dateShot, err := getMediaDate(path)
 		record = &FileMetadata{Path: path, Modified: f.ModTime(), Size: f.Size(), FileHash: fileHash, ImageHash: imageHash, DateShot: dateShot}
 		addRecord(files, hashes, record)
-		addFileToDB(dbFile, record)
-		fmt.Printf("Added %s\n", path)
+		if len(dbFile) > 0 {
+			addFileToDB(dbFile, record)
+		}
+		// fmt.Printf("Added %s\n", path)
 		return nil
 	}
 }
@@ -103,7 +105,7 @@ func getFileHash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	fmt.Printf("Hashing file %s\n", path)
+	// fmt.Printf("Hashing file %s\n", path)
 	hasher := sha1.New()
 	if _, err := io.Copy(hasher, f); err != nil {
 		return "", err
@@ -117,12 +119,12 @@ func getImageHash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	fmt.Printf("Reading image %s\n", path)
+	// fmt.Printf("Reading image %s\n", path)
 	image, err := jpeg.Decode(f)
 	if err != nil {
 		return "", err
 	}
-	fmt.Printf("Hashing image %s\n", path)
+	// fmt.Printf("Hashing image %s\n", path)
 	hasher := sha1.New()
 	if err := writeImage(hasher, image); err != nil {
 		return "", err
@@ -136,7 +138,7 @@ func getImageDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer f.Close()
-	fmt.Printf("Reading exif %s\n", path)
+	// fmt.Printf("Reading exif %s\n", path)
 	x, err := exif.Decode(f)
 	if err != nil {
 		return time.Time{}, err
@@ -186,20 +188,6 @@ func getMovieDate(path string) (time.Time, error) {
 		return datetime, nil
 	}
 	return time.Time{}, err
-}
-
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
-
-func max(x, y int) int {
-	if x > y {
-		return x
-	}
-	return y
 }
 
 func writeImage(writer io.Writer, image image.Image) error {
