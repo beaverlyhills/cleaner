@@ -1,11 +1,15 @@
 hash: 20e8f81405f986e17a267ca69aad75bacfaa17ae48eae392480d44bc4471f41a
-updated: 2017-05-29T12:27:08.2517269-07:00
+updated: 2017-05-29T13:27:34.6705703-07:00
 imports:
 - name: github.com/rwcarlsen/goexif
   version: 709fab3d192d7c62f86043caff1e7e3fb0f42bd8
   subpackages:
   - exif
   - tiff
+- name: golang.org/x/image
+  version: 426cfd8eeb6e08ab1932954e09e3c2cb2bc6e36d
+  subpackages:
+  - bmp
 - name: s.mcquay.me/sm/mov
   version: 33ad165fbca18c419ac582c51b7f268bbf6c8397
 testImports: []

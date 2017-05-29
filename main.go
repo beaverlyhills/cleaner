@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"crypto/sha1"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,6 +21,8 @@ import (
 
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/tiff"
+
+	"golang.org/x/image/bmp"
 )
 
 // FileMetadata contains cached file metadata
@@ -102,6 +103,7 @@ func getFileHash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
+	fmt.Printf("Hashing file %s\n", path)
 	hasher := sha1.New()
 	if _, err := io.Copy(hasher, f); err != nil {
 		return "", err
@@ -120,6 +122,7 @@ func getImageHash(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("Hashing image %s\n", path)
 	hasher := sha1.New()
 	if err := writeImage(hasher, image); err != nil {
 		return "", err
@@ -200,27 +203,7 @@ func max(x, y int) int {
 }
 
 func writeImage(writer io.Writer, image image.Image) error {
-	width := image.Bounds().Dx()
-	size := width * image.Bounds().Dy()
-	for x := 0; x < size; x++ {
-		row := x / width
-		col := x - row*width
-		c := image.At(col, row)
-		r, g, b, a := c.RGBA()
-		if err := binary.Write(writer, binary.LittleEndian, r); err != nil {
-			return err
-		}
-		if err := binary.Write(writer, binary.LittleEndian, g); err != nil {
-			return err
-		}
-		if err := binary.Write(writer, binary.LittleEndian, b); err != nil {
-			return err
-		}
-		if err := binary.Write(writer, binary.LittleEndian, a); err != nil {
-			return err
-		}
-	}
-	return nil
+	return bmp.Encode(writer, image)
 }
 
 func readDB(path string) (map[string]*FileMetadata, map[string][]*FileMetadata, error) {
