@@ -22,6 +22,8 @@ import (
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/tiff"
 
+	"strconv"
+
 	"golang.org/x/image/bmp"
 )
 
@@ -37,18 +39,18 @@ type FileMetadata struct {
 
 func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string][]*FileMetadata) filepath.WalkFunc {
 	return func(path string, f os.FileInfo, err error) error {
-		if f.IsDir() {
+		if f == nil || f.IsDir() {
 			return nil
 		}
-		fmt.Printf("Processing %s\n", path)
 		record := files[path]
 		if record != nil {
-			if f.Size() == record.Size && f.ModTime() == record.Modified && len(record.FileHash) > 0 {
+			if checkRecord(f, record) {
 				return nil
 			}
 			fmt.Printf("Metadata changed for %s\n", path)
 			removeRecord(files, hashes, record)
 		}
+		fmt.Printf("Processing %s\n", path)
 		fileHash, err := getFileHash(path)
 		if err != nil {
 			return err
@@ -70,7 +72,7 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 
 func getMediaDate(path string) (time.Time, error) {
 	dateShot, err := getImageDate(path)
-	if err != nil {
+	if err != nil && strings.HasSuffix(strings.ToLower(path), ".mov") {
 		// fmt.Printf("No exif %s\n", path)
 		dateShot, err = getMovieDate(path)
 		if err != nil {
@@ -86,6 +88,24 @@ func addFileToDB(dbFile string, record *FileMetadata) error {
 		return err
 	}
 	defer file.Close()
+	return writeRecordToFile(file, record)
+}
+
+func writeAllRecordsToDB(dbFile string, files map[string]*FileMetadata) error {
+	file, err := os.OpenFile(dbFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	for _, v := range files {
+		if err := writeRecordToFile(file, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeRecordToFile(file *os.File, record *FileMetadata) error {
 	data, err := json.Marshal(record)
 	if err != nil {
 		return err
@@ -215,14 +235,26 @@ func readDB(path string) (map[string]*FileMetadata, map[string][]*FileMetadata, 
 			return nil, nil, err
 		}
 		if len(record.Path) > 0 {
-			// fmt.Printf("Restored metadata for %s\n", record.Path)
-			addRecord(files, hashes, &record)
+			if f, err := os.Stat(record.Path); os.IsNotExist(err) {
+				fmt.Printf("File not found %s\n", record.Path)
+			} else {
+				if checkRecord(f, &record) {
+					// fmt.Printf("Restored metadata for %s\n", record.Path)
+					addRecord(files, hashes, &record)
+				} else {
+					fmt.Printf("Metadata changed for %s\n", record.Path)
+				}
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, nil, err
 	}
 	return files, hashes, nil
+}
+
+func checkRecord(f os.FileInfo, record *FileMetadata) bool {
+	return f.Size() == record.Size && f.ModTime() == record.Modified && len(record.FileHash) > 0
 }
 
 func addRecord(files map[string]*FileMetadata, hashes map[string][]*FileMetadata, record *FileMetadata) {
@@ -252,18 +284,29 @@ func deleteRecord(records []*FileMetadata, record *FileMetadata) []*FileMetadata
 
 func main() {
 	var dbFile string
+	var compactDB bool
 	flag.StringVar(&dbFile, "db", "cache.txt", "Database file path, default value is cache.txt")
+	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted records)")
 	flag.Parse()
 	files, hashes, err := readDB(dbFile)
 	if err != nil {
 		log.Fatal(err)
 	}
+	if compactDB {
+		fmt.Printf("Compacting db file %s\n", dbFile)
+		os.Rename(dbFile, dbFile+"."+strconv.FormatInt(time.Now().Unix(), 16))
+		if err := writeAllRecordsToDB(dbFile, files); err != nil {
+			log.Fatal(err)
+		}
+	}
+	fmt.Printf("Scanning paths\n")
 	for _, path := range flag.Args() {
 		fmt.Printf("Scanning %s\n", path)
 		err := filepath.Walk(path, visitFunc(dbFile, files, hashes))
 		if err != nil {
 			fmt.Printf("filepath.Walk() returned %v\n", err)
 		}
-		fmt.Printf("Finished scanning\n")
+		fmt.Printf("Finished scanning %s\n", path)
 	}
+	fmt.Printf("Finished scanning all paths\n")
 }
