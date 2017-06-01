@@ -60,12 +60,15 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 			// fmt.Printf("Not an image %s\n", path)
 		}
 		dateShot, err := getMediaDate(path)
+		if record != nil && (fileHash != record.FileHash || imageHash != record.ImageHash || dateShot != record.DateShot) {
+			fmt.Printf("Contents changed for %s\n", path)
+		}
 		record = &FileMetadata{Path: path, Modified: f.ModTime(), Size: f.Size(), FileHash: fileHash, ImageHash: imageHash, DateShot: dateShot}
+		// fmt.Printf("Adding %s\n", record.Path)
 		addRecord(files, hashes, record)
 		if len(dbFile) > 0 {
 			addFileToDB(dbFile, record)
 		}
-		// fmt.Printf("Added %s\n", path)
 		return nil
 	}
 }
@@ -83,6 +86,9 @@ func getMediaDate(path string) (time.Time, error) {
 }
 
 func addFileToDB(dbFile string, record *FileMetadata) error {
+	if dbFile == record.Path {
+		log.Fatal("Tried to write db data to destination file")
+	}
 	file, err := os.OpenFile(dbFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
 		return err
@@ -215,53 +221,64 @@ func writeImage(writer io.Writer, image image.Image) error {
 	return bmp.Encode(writer, image)
 }
 
-func readDB(path string) (map[string]*FileMetadata, map[string][]*FileMetadata, error) {
+func readDB(path string) (map[string]*FileMetadata, map[string][]*FileMetadata, bool, error) {
 	fmt.Printf("Reading database from %s\n", path)
 	files := make(map[string]*FileMetadata)
 	hashes := make(map[string][]*FileMetadata)
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return files, hashes, nil
+			return files, hashes, false, nil
 		}
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	defer file.Close()
+	needsCompacting := false
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var record FileMetadata
 		err := json.Unmarshal(scanner.Bytes(), &record)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		if len(record.Path) > 0 {
 			if f, err := os.Stat(record.Path); os.IsNotExist(err) {
 				fmt.Printf("File not found %s\n", record.Path)
+			} else if err != nil {
+				return nil, nil, false, err
 			} else {
 				if checkRecord(f, &record) {
+					if files[record.Path] != nil {
+						// fmt.Printf("Overwriting older record for %s\n", record.Path)
+						removeRecord(files, hashes, files[record.Path])
+						needsCompacting = true
+					}
 					// fmt.Printf("Restored metadata for %s\n", record.Path)
 					addRecord(files, hashes, &record)
 				} else {
-					fmt.Printf("Metadata changed for %s\n", record.Path)
+					fmt.Printf("Ignoring changed file %s\n", record.Path)
+					needsCompacting = true
 				}
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return files, hashes, nil
+	return files, hashes, needsCompacting, nil
 }
 
 func checkRecord(f os.FileInfo, record *FileMetadata) bool {
-	return f.Size() == record.Size && f.ModTime() == record.Modified && len(record.FileHash) > 0
+	return !f.IsDir() && f.Size() == record.Size && f.ModTime() == record.Modified && len(record.FileHash) > 0
 }
 
 func addRecord(files map[string]*FileMetadata, hashes map[string][]*FileMetadata, record *FileMetadata) {
 	files[record.Path] = record
-	hashes[record.FileHash] = append(hashes[record.FileHash], record)
-	if len(record.ImageHash) > 0 {
-		hashes[record.ImageHash] = append(hashes[record.ImageHash], record)
+	if record.Size > 0 {
+		hashes[record.FileHash] = append(hashes[record.FileHash], record)
+		if len(record.ImageHash) > 0 {
+			hashes[record.ImageHash] = append(hashes[record.ImageHash], record)
+		}
 	}
 }
 
@@ -285,16 +302,19 @@ func deleteRecord(records []*FileMetadata, record *FileMetadata) []*FileMetadata
 func main() {
 	var dbFile string
 	var compactDB bool
+	var showDuplicates string
 	flag.StringVar(&dbFile, "db", "cache.txt", "Database file path, default value is cache.txt")
-	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted records)")
+	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted and changed records)")
+	flag.StringVar(&showDuplicates, "dup", "", "Show duplicates in specified folder from database")
 	flag.Parse()
-	files, hashes, err := readDB(dbFile)
+	files, hashes, needsCompacting, err := readDB(dbFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if compactDB {
-		fmt.Printf("Compacting db file %s\n", dbFile)
-		os.Rename(dbFile, dbFile+"."+strconv.FormatInt(time.Now().Unix(), 16))
+	if compactDB && needsCompacting {
+		backup := dbFile + "." + strconv.FormatInt(time.Now().Unix(), 16)
+		fmt.Printf("Compacting db file %s with backup in %s\n", dbFile, backup)
+		os.Rename(dbFile, backup)
 		if err := writeAllRecordsToDB(dbFile, files); err != nil {
 			log.Fatal(err)
 		}
@@ -309,4 +329,38 @@ func main() {
 		fmt.Printf("Finished scanning %s\n", path)
 	}
 	fmt.Printf("Finished scanning all paths\n")
+	if len(showDuplicates) > 0 {
+		var visited = make(map[string]*FileMetadata)
+		fmt.Printf("Looking for duplicates in %s\n", showDuplicates)
+		prefix := fmt.Sprintf("%s%c", showDuplicates, filepath.Separator)
+		for p, r := range files {
+			if strings.HasPrefix(p, prefix) {
+				strictMatches := hashes[r.FileHash]
+				if len(strictMatches) > 1 && visited[r.FileHash] == nil {
+					visited[r.FileHash] = r
+					if len(r.ImageHash) > 0 {
+						visited[r.ImageHash] = r
+					}
+					fmt.Printf("Duplicate File: %s\n", r.Path)
+					for _, d := range strictMatches {
+						if d != r {
+							fmt.Printf(" - %s\n", d.Path)
+						}
+					}
+				} else if len(r.ImageHash) > 0 {
+					bitmapMatches := hashes[r.ImageHash]
+					if len(bitmapMatches) > 1 && visited[r.ImageHash] == nil {
+						visited[r.FileHash] = r
+						visited[r.ImageHash] = r
+						fmt.Printf("Duplicate Image: %s\n", r.Path)
+						for _, d := range bitmapMatches {
+							if d != r {
+								fmt.Printf(" - %s\n", d.Path)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
