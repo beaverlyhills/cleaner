@@ -57,7 +57,7 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 		if err != nil {
 			return err
 		}
-		log.Infof("Adding %s\n", record.Path)
+		log.Debugf("Adding %s\n", record.Path)
 		addRecord(files, hashes, record)
 		if len(dbFile) > 0 {
 			addFileToDB(dbFile, record)
@@ -74,11 +74,11 @@ func getFileRecord(path string, f os.FileInfo, record *FileMetadata) (*FileMetad
 	}
 	imageHash, err := getImageHash(path)
 	if err != nil {
-		log.Infof("Not an image %s\n", path)
+		log.Debugf("Not an image %s\n", path)
 	}
 	dateShot, err := getMediaDate(path)
 	if err != nil {
-		log.Infof("Not a supported media file %s\n", path)
+		log.Debugf("Not a supported media file %s\n", path)
 	}
 	creationTime := getCreationTime(f)
 	if record != nil && (fileHash != record.FileHash || imageHash != record.ImageHash || dateShot != record.DateShot) {
@@ -90,10 +90,10 @@ func getFileRecord(path string, f os.FileInfo, record *FileMetadata) (*FileMetad
 func getMediaDate(path string) (time.Time, error) {
 	dateShot, err := getImageDate(path)
 	if err != nil && strings.HasSuffix(strings.ToLower(path), ".mov") {
-		log.Infof("No exif %s\n", path)
+		log.Debugf("No exif %s\n", path)
 		dateShot, err = getMovieDate(path)
 		if err != nil {
-			log.Infof("No moov %s\n", path)
+			log.Debugf("No moov %s\n", path)
 		}
 	}
 	return dateShot, err
@@ -136,7 +136,7 @@ func writeRecordToFile(file *os.File, record *FileMetadata) error {
 	if _, err = file.WriteString("\n"); err != nil {
 		return err
 	}
-	log.Infof("Saved metadata for %s\n", record.Path)
+	log.Debugf("Saved metadata for %s\n", record.Path)
 	return nil
 }
 
@@ -146,7 +146,7 @@ func getFileHash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	log.Infof("Hashing file %s\n", path)
+	log.Debugf("Hashing file %s\n", path)
 	hasher := sha1.New()
 	if _, err := io.Copy(hasher, f); err != nil {
 		return "", err
@@ -160,12 +160,12 @@ func getImageHash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	log.Infof("Reading image %s\n", path)
+	log.Debugf("Reading image %s\n", path)
 	image, err := jpeg.Decode(f)
 	if err != nil {
 		return "", err
 	}
-	log.Infof("Hashing image %s\n", path)
+	log.Debugf("Hashing image %s\n", path)
 	hasher := sha1.New()
 	if err := writeImage(hasher, image); err != nil {
 		return "", err
@@ -179,7 +179,7 @@ func getImageDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer f.Close()
-	log.Infof("Reading exif %s\n", path)
+	log.Debugf("Reading exif %s\n", path)
 	x, err := exif.Decode(f)
 	if err != nil {
 		return time.Time{}, err
@@ -223,7 +223,7 @@ func getMovieDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer f.Close()
-	log.Infof("Reading moov %s\n", path)
+	log.Debugf("Reading moov %s\n", path)
 	datetime, err := mov.Created(f)
 	if err == nil {
 		return datetime, nil
@@ -257,29 +257,29 @@ func readDB(dbPath string) (map[string]*FileMetadata, map[string][]*FileMetadata
 		}
 		if len(record.Path) > 0 {
 			if f, err := os.Stat(record.Path); os.IsNotExist(err) {
-				log.Infof("File not found %s\n", record.Path)
+				log.Warningf("File not found %s\n", record.Path)
 			} else if err != nil {
 				return nil, nil, false, err
 			} else {
 				if record.Created.IsZero() {
-					log.Infof("Backfilling creation time %s\n", record.Path)
+					log.Debugf("Backfilling creation time %s\n", record.Path)
 					record.Created = getCreationTime(f)
 				}
 				if checkRecord(f, record) {
 					if files[record.Path] != nil {
-						log.Infof("Overwriting older record for %s\n", record.Path)
+						log.Debugf("Overwriting older record for %s\n", record.Path)
 						removeRecord(files, hashes, files[record.Path])
 						needsCompacting = true
 					}
-					log.Infof("Restored metadata for %s\n", record.Path)
+					log.Debugf("Restored metadata for %s\n", record.Path)
 					addRecord(files, hashes, record)
 				} else {
-					log.Infof("Refreshing changed file %s\n", record.Path)
+					log.Debugf("Refreshing changed file %s\n", record.Path)
 					record, err = getFileRecord(record.Path, f, record)
 					if err != nil {
 						return nil, nil, false, err
 					}
-					log.Infof("Adding refreshed %s\n", record.Path)
+					log.Debugf("Adding refreshed %s\n", record.Path)
 					addRecord(files, hashes, record)
 					addFileToDB(dbPath, record)
 					needsCompacting = true
@@ -388,7 +388,7 @@ func showDuplicates(folderToScanForDuplicates string, files map[string]*FileMeta
 				var master *FileMetadata
 				if allDupsInside {
 					master = pickMaster(dups)
-					log.Infof("Picked master: %s (Shot: %s, Created: %s, Modified: %s)\n", master.Path, master.DateShot, master.Created, master.Modified)
+					log.Debugf("Picked master: %s (Shot: %s, Created: %s, Modified: %s)\n", master.Path, master.DateShot, master.Created, master.Modified)
 				}
 				for p, strict := range dups {
 					if p == master {
@@ -398,7 +398,7 @@ func showDuplicates(folderToScanForDuplicates string, files map[string]*FileMeta
 					if !strict {
 						matchType = "Bitmap Match"
 					}
-					log.Infof("Duplicate File: %s (%s, Shot: %s, Created: %s, Modified: %s)\n", p.Path, matchType, p.DateShot, p.Created, p.Modified)
+					log.Debugf("Duplicate File: %s (%s, Shot: %s, Created: %s, Modified: %s)\n", p.Path, matchType, p.DateShot, p.Created, p.Modified)
 					fmt.Printf("%s\n", p.Path)
 				}
 			}
@@ -424,10 +424,21 @@ func main() {
 	var dbFile string
 	var compactDB bool
 	var folderToScanForDuplicates string
+	var verbose bool
+	var silent bool
 	flag.StringVar(&dbFile, "db", "cache.txt", "Database file path, default value is cache.txt")
 	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted and changed records)")
 	flag.StringVar(&folderToScanForDuplicates, "dup", "", "Show duplicates in specified folder from database")
+	flag.BoolVar(&silent, "silent", false, "Supress non-error logging")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
+	if silent {
+		logging.SetLevel(logging.WARNING, "cleaner")
+	} else if verbose {
+		logging.SetLevel(logging.DEBUG, "cleaner")
+	} else {
+		logging.SetLevel(logging.INFO, "cleaner")
+	}
 	files, hashes, needsCompacting, err := readDB(dbFile)
 	if err != nil {
 		log.Fatal(err)
