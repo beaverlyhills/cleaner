@@ -35,6 +35,7 @@ type FileMetadata struct {
 	Size      int64
 	FileHash  string
 	ImageHash string
+	Created   time.Time
 	Modified  time.Time
 	DateShot  time.Time
 }
@@ -79,10 +80,11 @@ func getFileRecord(path string, f os.FileInfo, record *FileMetadata) (*FileMetad
 	if err != nil {
 		log.Infof("Not a supported media file %s\n", path)
 	}
+	creationTime := getCreationTime(f)
 	if record != nil && (fileHash != record.FileHash || imageHash != record.ImageHash || dateShot != record.DateShot) {
 		log.Warningf("Contents changed for %s\n", path)
 	}
-	return &FileMetadata{Path: path, Modified: f.ModTime(), Size: f.Size(), FileHash: fileHash, ImageHash: imageHash, DateShot: dateShot}, nil
+	return &FileMetadata{Path: path, Created: creationTime, Modified: f.ModTime(), Size: f.Size(), FileHash: fileHash, ImageHash: imageHash, DateShot: dateShot}, nil
 }
 
 func getMediaDate(path string) (time.Time, error) {
@@ -285,7 +287,7 @@ func readDB(dbPath string) (map[string]*FileMetadata, map[string][]*FileMetadata
 }
 
 func checkRecord(f os.FileInfo, record *FileMetadata) bool {
-	return !f.IsDir() && f.Size() == record.Size && f.ModTime() == record.Modified && len(record.FileHash) > 0
+	return !f.IsDir() && f.Size() == record.Size && getCreationTime(f) == record.Created && f.ModTime() == record.Modified && len(record.FileHash) > 0
 }
 
 func addRecord(files map[string]*FileMetadata, hashes map[string][]*FileMetadata, record *FileMetadata) {
@@ -315,13 +317,35 @@ func deleteRecord(records []*FileMetadata, record *FileMetadata) []*FileMetadata
 	return records
 }
 
+// Pick oldest files, unless it's an image with larger size
+func pickMaster(dups map[*FileMetadata]bool) *FileMetadata {
+	var master *FileMetadata
+	for d := range dups {
+		if master == nil {
+			master = d
+		} else if d.Size > master.Size {
+			// Picking larger files since they most likely have more metadata with same image data
+			master = d
+		} else if !d.DateShot.IsZero() && (master.DateShot.IsZero() || d.DateShot.Unix() < master.DateShot.Unix()) {
+			// Pick earliest shooting date
+			master = d
+		} else if d.Modified.Unix() < master.Modified.Unix() {
+			// For copied files modification date would be more accurate than creation date
+			master = d
+		} else if d.Created.Unix() < master.Created.Unix() {
+			master = d
+		}
+	}
+	return master
+}
+
 func main() {
 	var dbFile string
 	var compactDB bool
-	var showDuplicates string
+	var folderToScanForDuplicates string
 	flag.StringVar(&dbFile, "db", "cache.txt", "Database file path, default value is cache.txt")
 	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted and changed records)")
-	flag.StringVar(&showDuplicates, "dup", "", "Show duplicates in specified folder from database")
+	flag.StringVar(&folderToScanForDuplicates, "dup", "", "Show duplicates in specified folder from database")
 	flag.Parse()
 	files, hashes, needsCompacting, err := readDB(dbFile)
 	if err != nil {
@@ -345,32 +369,60 @@ func main() {
 		log.Infof("Finished scanning %s\n", path)
 	}
 	log.Infof("Finished scanning all paths\n")
-	if len(showDuplicates) > 0 {
-		var visited = make(map[string]*FileMetadata)
-		log.Infof("Looking for duplicates in %s\n", showDuplicates)
-		prefix := fmt.Sprintf("%s%c", showDuplicates, filepath.Separator)
+	if len(folderToScanForDuplicates) > 0 {
+		log.Infof("Looking for duplicates in %s\n", folderToScanForDuplicates)
+		visited := make(map[string]*FileMetadata)
+		prefix := fmt.Sprintf("%s%c", folderToScanForDuplicates, filepath.Separator)
 		for p, r := range files {
+			if visited[p] != nil {
+				continue
+			}
 			if strings.HasPrefix(p, prefix) {
+				dups := make(map[*FileMetadata]bool)
+				allDupsInside := true
 				strictMatches := hashes[r.FileHash]
-				if len(strictMatches) > 1 && visited[r.FileHash] == nil {
-					visited[r.FileHash] = r
-					fmt.Printf("Duplicate File: %s\n", r.Path)
+				if len(strictMatches) > 1 {
 					for _, d := range strictMatches {
-						if d != r {
-							fmt.Printf(" - %s\n", d.Path)
+						if strings.HasPrefix(p, prefix) {
+							dups[d] = true
+							visited[d.Path] = d
+						} else {
+							allDupsInside = false
 						}
 					}
 				}
 				if len(r.ImageHash) > 0 {
 					bitmapMatches := hashes[r.ImageHash]
-					if len(bitmapMatches) > 1 && visited[r.ImageHash] == nil {
-						visited[r.ImageHash] = r
-						fmt.Printf("Duplicate Image: %s\n", r.Path)
+					if len(bitmapMatches) > 1 {
 						for _, d := range bitmapMatches {
-							if d != r {
-								fmt.Printf(" - %s\n", d.Path)
+							if _, ok := dups[d]; ok {
+								continue
+							}
+							if strings.HasPrefix(p, prefix) {
+								dups[d] = false
+								visited[d.Path] = d
+							} else {
+								allDupsInside = false
 							}
 						}
+					}
+				}
+				if len(dups) > 0 {
+					var master *FileMetadata
+					if allDupsInside {
+						master = pickMaster(dups)
+						log.Infof("Picked master: %s (Shot: %s, Created: %s, Modified: %s)\n", master.Path, master.DateShot, master.Created, master.Modified)
+					}
+					for p, strict := range dups {
+						if p == master {
+							continue
+						}
+						matchType := "Strict Match"
+						if !strict {
+							matchType = "Bitmap Match"
+						}
+						log.Infof("Duplicate File: %s (%s, Shot: %s, Created: %s, Modified: %s)\n", p.Path, matchType, p.DateShot, p.Created, p.Modified)
+						fmt.Printf("%s\n", p.Path)
 					}
 				}
 			}
