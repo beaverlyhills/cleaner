@@ -5,3 +5,8 @@ import:
   - exif
   - tiff
 - package: s.mcquay.me/sm/mov
+- package: github.com/op/go-logging
+  version: ^1.0.0
+- package: golang.org/x/image
+  subpackages:
+  - bmp

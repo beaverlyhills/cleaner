@@ -1,6 +1,8 @@
-hash: 20e8f81405f986e17a267ca69aad75bacfaa17ae48eae392480d44bc4471f41a
-updated: 2017-05-29T13:27:34.6705703-07:00
+hash: b13954cb0efb92bac9de83c8f4035edb7adcfe31501287bac963fa15e026068e
+updated: 2017-06-03T13:02:08.2496155-07:00
 imports:
+- name: github.com/op/go-logging
+  version: b2cb9fa56473e98db8caba80237377e83fe44db5
 - name: github.com/rwcarlsen/goexif
   version: 709fab3d192d7c62f86043caff1e7e3fb0f42bd8
   subpackages:

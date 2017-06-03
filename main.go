@@ -11,7 +11,6 @@ import (
 	"image"
 	"image/jpeg"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +18,7 @@ import (
 
 	"s.mcquay.me/sm/mov"
 
+	logging "github.com/op/go-logging"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/tiff"
 
@@ -26,6 +26,8 @@ import (
 
 	"golang.org/x/image/bmp"
 )
+
+var log = logging.MustGetLogger("cleaner")
 
 // FileMetadata contains cached file metadata
 type FileMetadata struct {
@@ -47,24 +49,14 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 			if checkRecord(f, record) {
 				return nil
 			}
-			fmt.Printf("Metadata changed for %s\n", path)
+			log.Warningf("Metadata changed for %s\n", path)
 			removeRecord(files, hashes, record)
 		}
-		fmt.Printf("Processing %s\n", path)
-		fileHash, err := getFileHash(path)
+		record, err = getFileRecord(path, f, record)
 		if err != nil {
 			return err
 		}
-		imageHash, err := getImageHash(path)
-		if err != nil {
-			// fmt.Printf("Not an image %s\n", path)
-		}
-		dateShot, err := getMediaDate(path)
-		if record != nil && (fileHash != record.FileHash || imageHash != record.ImageHash || dateShot != record.DateShot) {
-			fmt.Printf("Contents changed for %s\n", path)
-		}
-		record = &FileMetadata{Path: path, Modified: f.ModTime(), Size: f.Size(), FileHash: fileHash, ImageHash: imageHash, DateShot: dateShot}
-		// fmt.Printf("Adding %s\n", record.Path)
+		log.Infof("Adding %s\n", record.Path)
 		addRecord(files, hashes, record)
 		if len(dbFile) > 0 {
 			addFileToDB(dbFile, record)
@@ -73,13 +65,33 @@ func visitFunc(dbFile string, files map[string]*FileMetadata, hashes map[string]
 	}
 }
 
+func getFileRecord(path string, f os.FileInfo, record *FileMetadata) (*FileMetadata, error) {
+	log.Infof("Processing %s\n", path)
+	fileHash, err := getFileHash(path)
+	if err != nil {
+		return nil, err
+	}
+	imageHash, err := getImageHash(path)
+	if err != nil {
+		log.Infof("Not an image %s\n", path)
+	}
+	dateShot, err := getMediaDate(path)
+	if err != nil {
+		log.Infof("Not a supported media file %s\n", path)
+	}
+	if record != nil && (fileHash != record.FileHash || imageHash != record.ImageHash || dateShot != record.DateShot) {
+		log.Warningf("Contents changed for %s\n", path)
+	}
+	return &FileMetadata{Path: path, Modified: f.ModTime(), Size: f.Size(), FileHash: fileHash, ImageHash: imageHash, DateShot: dateShot}, nil
+}
+
 func getMediaDate(path string) (time.Time, error) {
 	dateShot, err := getImageDate(path)
 	if err != nil && strings.HasSuffix(strings.ToLower(path), ".mov") {
-		// fmt.Printf("No exif %s\n", path)
+		log.Infof("No exif %s\n", path)
 		dateShot, err = getMovieDate(path)
 		if err != nil {
-			// fmt.Printf("No moov %s\n", path)
+			log.Infof("No moov %s\n", path)
 		}
 	}
 	return dateShot, err
@@ -122,7 +134,7 @@ func writeRecordToFile(file *os.File, record *FileMetadata) error {
 	if _, err = file.WriteString("\n"); err != nil {
 		return err
 	}
-	// fmt.Printf("Saved metadata for %s\n", record.Path)
+	log.Infof("Saved metadata for %s\n", record.Path)
 	return nil
 }
 
@@ -132,7 +144,7 @@ func getFileHash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	// fmt.Printf("Hashing file %s\n", path)
+	log.Infof("Hashing file %s\n", path)
 	hasher := sha1.New()
 	if _, err := io.Copy(hasher, f); err != nil {
 		return "", err
@@ -146,12 +158,12 @@ func getImageHash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	// fmt.Printf("Reading image %s\n", path)
+	log.Infof("Reading image %s\n", path)
 	image, err := jpeg.Decode(f)
 	if err != nil {
 		return "", err
 	}
-	// fmt.Printf("Hashing image %s\n", path)
+	log.Infof("Hashing image %s\n", path)
 	hasher := sha1.New()
 	if err := writeImage(hasher, image); err != nil {
 		return "", err
@@ -165,7 +177,7 @@ func getImageDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer f.Close()
-	// fmt.Printf("Reading exif %s\n", path)
+	log.Infof("Reading exif %s\n", path)
 	x, err := exif.Decode(f)
 	if err != nil {
 		return time.Time{}, err
@@ -209,7 +221,7 @@ func getMovieDate(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer f.Close()
-	// fmt.Printf("Reading moov %s\n", path)
+	log.Infof("Reading moov %s\n", path)
 	datetime, err := mov.Created(f)
 	if err == nil {
 		return datetime, nil
@@ -221,11 +233,11 @@ func writeImage(writer io.Writer, image image.Image) error {
 	return bmp.Encode(writer, image)
 }
 
-func readDB(path string) (map[string]*FileMetadata, map[string][]*FileMetadata, bool, error) {
-	fmt.Printf("Reading database from %s\n", path)
+func readDB(dbPath string) (map[string]*FileMetadata, map[string][]*FileMetadata, bool, error) {
+	log.Infof("Reading database from %s\n", dbPath)
 	files := make(map[string]*FileMetadata)
 	hashes := make(map[string][]*FileMetadata)
-	file, err := os.Open(path)
+	file, err := os.Open(dbPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return files, hashes, false, nil
@@ -236,27 +248,31 @@ func readDB(path string) (map[string]*FileMetadata, map[string][]*FileMetadata, 
 	needsCompacting := false
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		var record FileMetadata
-		err := json.Unmarshal(scanner.Bytes(), &record)
+		record := &FileMetadata{}
+		err := json.Unmarshal(scanner.Bytes(), record)
 		if err != nil {
 			return nil, nil, false, err
 		}
 		if len(record.Path) > 0 {
 			if f, err := os.Stat(record.Path); os.IsNotExist(err) {
-				fmt.Printf("File not found %s\n", record.Path)
+				log.Infof("File not found %s\n", record.Path)
 			} else if err != nil {
 				return nil, nil, false, err
 			} else {
-				if checkRecord(f, &record) {
+				if checkRecord(f, record) {
 					if files[record.Path] != nil {
-						// fmt.Printf("Overwriting older record for %s\n", record.Path)
+						log.Infof("Overwriting older record for %s\n", record.Path)
 						removeRecord(files, hashes, files[record.Path])
 						needsCompacting = true
 					}
-					// fmt.Printf("Restored metadata for %s\n", record.Path)
-					addRecord(files, hashes, &record)
+					log.Infof("Restored metadata for %s\n", record.Path)
+					addRecord(files, hashes, record)
 				} else {
-					fmt.Printf("Ignoring changed file %s\n", record.Path)
+					log.Infof("Refreshing changed file %s\n", record.Path)
+					record, err = getFileRecord(record.Path, f, record)
+					if err != nil {
+						return nil, nil, false, err
+					}
 					needsCompacting = true
 				}
 			}
@@ -313,44 +329,41 @@ func main() {
 	}
 	if compactDB && needsCompacting {
 		backup := dbFile + "." + strconv.FormatInt(time.Now().Unix(), 16)
-		fmt.Printf("Compacting db file %s with backup in %s\n", dbFile, backup)
+		log.Infof("Compacting db file %s with backup in %s\n", dbFile, backup)
 		os.Rename(dbFile, backup)
 		if err := writeAllRecordsToDB(dbFile, files); err != nil {
 			log.Fatal(err)
 		}
 	}
-	fmt.Printf("Scanning paths\n")
+	log.Infof("Scanning paths\n")
 	for _, path := range flag.Args() {
-		fmt.Printf("Scanning %s\n", path)
+		log.Infof("Scanning %s\n", path)
 		err := filepath.Walk(path, visitFunc(dbFile, files, hashes))
 		if err != nil {
-			fmt.Printf("filepath.Walk() returned %v\n", err)
+			log.Infof("filepath.Walk() returned %v\n", err)
 		}
-		fmt.Printf("Finished scanning %s\n", path)
+		log.Infof("Finished scanning %s\n", path)
 	}
-	fmt.Printf("Finished scanning all paths\n")
+	log.Infof("Finished scanning all paths\n")
 	if len(showDuplicates) > 0 {
 		var visited = make(map[string]*FileMetadata)
-		fmt.Printf("Looking for duplicates in %s\n", showDuplicates)
+		log.Infof("Looking for duplicates in %s\n", showDuplicates)
 		prefix := fmt.Sprintf("%s%c", showDuplicates, filepath.Separator)
 		for p, r := range files {
 			if strings.HasPrefix(p, prefix) {
 				strictMatches := hashes[r.FileHash]
 				if len(strictMatches) > 1 && visited[r.FileHash] == nil {
 					visited[r.FileHash] = r
-					if len(r.ImageHash) > 0 {
-						visited[r.ImageHash] = r
-					}
 					fmt.Printf("Duplicate File: %s\n", r.Path)
 					for _, d := range strictMatches {
 						if d != r {
 							fmt.Printf(" - %s\n", d.Path)
 						}
 					}
-				} else if len(r.ImageHash) > 0 {
+				}
+				if len(r.ImageHash) > 0 {
 					bitmapMatches := hashes[r.ImageHash]
 					if len(bitmapMatches) > 1 && visited[r.ImageHash] == nil {
-						visited[r.FileHash] = r
 						visited[r.ImageHash] = r
 						fmt.Printf("Duplicate Image: %s\n", r.Path)
 						for _, d := range bitmapMatches {
