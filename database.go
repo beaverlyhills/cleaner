@@ -69,7 +69,8 @@ func writeAllRecordsToDB(fh *FileHashes) error {
 	return nil
 }
 
-func compactDB(fh *FileHashes) error {
+// CompactDB rewrites database file with latest file records
+func CompactDB(fh *FileHashes) error {
 	backup := fh.dbPath + "." + strconv.FormatInt(time.Now().Unix(), 16)
 	log.Infof("Compacting db file %s with backup in %s\n", fh.dbPath, backup)
 	os.Rename(fh.dbPath, backup)
@@ -174,7 +175,7 @@ func readDB(dbPath string, compact bool, addRec addFn, updatePath updatePathFn) 
 		return nil, err
 	}
 	if compact && needsCompacting {
-		if err := compactDB(fh); err != nil {
+		if err := CompactDB(fh); err != nil {
 			return nil, err
 		}
 	}

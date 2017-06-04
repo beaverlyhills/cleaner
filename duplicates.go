@@ -183,11 +183,12 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 }
 
 // MoveDuplicates moves found duplicates to destination folder with preserving relative path
-func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*FileMetadata][]*FileMetadata) error {
+func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*FileMetadata][]*FileMetadata, fh *FileHashes) (bool, error) {
 	moveDuplicatesTo, err := filepath.Abs(moveDuplicatesTo)
 	if err != nil {
-		return err
+		return false, err
 	}
+	moved := false
 	for _, list := range dups {
 		for _, p := range list {
 			var relPath string
@@ -195,14 +196,14 @@ func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*File
 			if len(removePrefix) > 0 {
 				removePrefix, err := filepath.Abs(removePrefix)
 				if err != nil {
-					return err
+					return moved, err
 				}
 				relPath, err = filepath.Rel(removePrefix, p.Path)
 			} else {
 				relPath, err = filepath.Rel(fmt.Sprintf("%s%c", filepath.VolumeName(p.Path), filepath.Separator), p.Path)
 			}
 			if err != nil {
-				return err
+				return moved, err
 			}
 			relDir := filepath.Dir(relPath)
 			newDir := moveDuplicatesTo
@@ -218,20 +219,22 @@ func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*File
 				log.Warningf("File does not exist %s\n", p.Path)
 				continue
 			} else if err != nil {
-				return err
+				return moved, err
 			}
 			if _, err := os.Stat(newPath); err == nil || !os.IsNotExist(err) {
-				return errors.New("Destination file already exists")
+				return moved, errors.New("Destination file already exists")
 			}
 			err = os.MkdirAll(newDir, 0777)
 			if err != nil && !os.IsExist(err) {
-				return err
+				return moved, err
 			}
 			err = os.Rename(p.Path, newPath)
 			if err != nil {
-				return err
+				return moved, err
 			}
+			removeRecord(fh, p)
+			moved = true
 		}
 	}
-	return nil
+	return moved, nil
 }

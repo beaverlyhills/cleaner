@@ -50,9 +50,15 @@ func main() {
 			log.Fatal(err)
 		}
 		if len(moveDuplicatesTo) > 0 && len(dups) > 0 {
-			err := MoveDuplicates(moveDuplicatesTo, removePrefix, dups)
+			moved, err := MoveDuplicates(moveDuplicatesTo, removePrefix, dups, fh)
 			if err != nil {
 				log.Fatal(err)
+			}
+			if moved {
+				err = CompactDB(fh)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 		}
 	}
