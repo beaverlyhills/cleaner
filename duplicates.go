@@ -213,12 +213,19 @@ func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*File
 			newPath := fmt.Sprintf("%s%c%s", filepath.Clean(moveDuplicatesTo), filepath.Separator, relPath)
 			log.Debugf("Destination path: %s\n", newPath)
 			fmt.Printf("Moving %s to %s\n", p.Path, newPath)
-			err = os.MkdirAll(newDir, 0777)
-			if err != nil && !os.IsExist(err) {
+			if _, err := os.Stat(p.Path); os.IsNotExist(err) {
+				// Most likely we already moved this duplicate
+				log.Warningf("File does not exist %s\n", p.Path)
+				continue
+			} else if err != nil {
 				return err
 			}
 			if _, err := os.Stat(newPath); err == nil || !os.IsNotExist(err) {
 				return errors.New("Destination file already exists")
+			}
+			err = os.MkdirAll(newDir, 0777)
+			if err != nil && !os.IsExist(err) {
+				return err
 			}
 			err = os.Rename(p.Path, newPath)
 			if err != nil {

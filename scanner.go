@@ -56,7 +56,7 @@ func checkRecord(f os.FileInfo, record *FileMetadata) bool {
 
 // ReadDB reads cache database, checks and refreshes outdated file records
 func ReadDB(dbPath string, compact bool) (*FileHashes, error) {
-	return readDB(dbPath, compact, checkDBRecord, defaultPath)
+	return readDB(dbPath, compact, addDBRecord, defaultPath)
 }
 
 // ScanFolders scans specified paths and adds them to database
@@ -78,13 +78,17 @@ func ScanFolders(folders []string, fh *FileHashes) error {
 	return nil
 }
 
-func checkDBRecord(fh *FileHashes, record *FileMetadata) (bool, error) {
+func addDBRecord(fh *FileHashes, record *FileMetadata) (bool, error) {
 	f, err := os.Stat(record.Path)
 	if os.IsNotExist(err) {
 		log.Warningf("File not found %s\n", record.Path)
 		return true, nil
 	} else if err != nil {
 		return false, err
+	}
+	if fh.files[record.Path] != nil && checkRecord(f, fh.files[record.Path]) {
+		log.Debugf("Already have accurate record for %s\n", record.Path)
+		return true, nil
 	}
 	if checkRecord(f, record) {
 		return defaultAdd(fh, record)
