@@ -18,13 +18,15 @@ func main() {
 	var moveDuplicatesTo string
 	var searchForDuplicates bool
 	var removePrefix string
+	var applyMove bool
 	flag.StringVar(&dbFile, "db", "cache.txt", "Database file path, default value is cache.txt")
 	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted and changed records)")
 	flag.StringVar(&folderToScanForDuplicates, "duplicates", "", "Search duplicates in specified folder from database, implies -dups")
 	flag.StringVar(&folderToScanForMasters, "masters", "", "Search duplicates with masters in specified folder from database (use same path in -duplicates to only look inside specified path), implies -dups")
-	flag.StringVar(&moveDuplicatesTo, "move", "", "Move duplicates into specified folder preserving their relative paths, implies -dups")
+	flag.StringVar(&moveDuplicatesTo, "move", "", "Move duplicates into specified folder preserving their relative paths, does not move files without -apply, implies -dups")
 	flag.StringVar(&removePrefix, "prefix", "", "Prefix to remove when moving duplicates")
 	flag.BoolVar(&searchForDuplicates, "dups", false, "Scan for duplicates")
+	flag.BoolVar(&applyMove, "apply", false, "Move duplicate files into destination directory")
 	flag.BoolVar(&silent, "silent", false, "Supress non-error logging")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
@@ -50,7 +52,7 @@ func main() {
 			log.Fatal(err)
 		}
 		if len(moveDuplicatesTo) > 0 && len(dups) > 0 {
-			moved, err := MoveDuplicates(moveDuplicatesTo, removePrefix, dups, fh)
+			moved, err := MoveDuplicates(moveDuplicatesTo, removePrefix, dups, fh, applyMove)
 			if err != nil {
 				log.Fatal(err)
 			}

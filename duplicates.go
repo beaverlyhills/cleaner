@@ -183,7 +183,7 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 }
 
 // MoveDuplicates moves found duplicates to destination folder with preserving relative path
-func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*FileMetadata][]*FileMetadata, fh *FileHashes) (bool, error) {
+func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*FileMetadata][]*FileMetadata, fh *FileHashes, applyMove bool) (bool, error) {
 	moveDuplicatesTo, err := filepath.Abs(moveDuplicatesTo)
 	if err != nil {
 		return false, err
@@ -223,6 +223,9 @@ func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*File
 			}
 			if _, err := os.Stat(newPath); err == nil || !os.IsNotExist(err) {
 				return moved, errors.New("Destination file already exists")
+			}
+			if !applyMove {
+				continue
 			}
 			err = os.MkdirAll(newDir, 0777)
 			if err != nil && !os.IsExist(err) {
