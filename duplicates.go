@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -181,7 +183,7 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 }
 
 // MoveDuplicates moves found duplicates to destination folder with preserving relative path
-func MoveDuplicates(moveDuplicatesTo string, dups map[*FileMetadata][]*FileMetadata) error {
+func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*FileMetadata][]*FileMetadata) error {
 	moveDuplicatesTo, err := filepath.Abs(moveDuplicatesTo)
 	if err != nil {
 		return err
@@ -190,7 +192,15 @@ func MoveDuplicates(moveDuplicatesTo string, dups map[*FileMetadata][]*FileMetad
 		for _, p := range list {
 			var relPath string
 			var err error
-			relPath, err = filepath.Rel(fmt.Sprintf("%s%c", filepath.VolumeName(p.Path), filepath.Separator), p.Path)
+			if len(removePrefix) > 0 {
+				removePrefix, err := filepath.Abs(removePrefix)
+				if err != nil {
+					return err
+				}
+				relPath, err = filepath.Rel(removePrefix, p.Path)
+			} else {
+				relPath, err = filepath.Rel(fmt.Sprintf("%s%c", filepath.VolumeName(p.Path), filepath.Separator), p.Path)
+			}
 			if err != nil {
 				return err
 			}
@@ -203,8 +213,17 @@ func MoveDuplicates(moveDuplicatesTo string, dups map[*FileMetadata][]*FileMetad
 			newPath := fmt.Sprintf("%s%c%s", filepath.Clean(moveDuplicatesTo), filepath.Separator, relPath)
 			log.Debugf("Destination path: %s\n", newPath)
 			fmt.Printf("Moving %s to %s\n", p.Path, newPath)
-			// os.MkdirAll(newPath, 0777)
-			// os.Rename(p.Path, newPath)
+			err = os.MkdirAll(newDir, 0777)
+			if err != nil && !os.IsExist(err) {
+				return err
+			}
+			if _, err := os.Stat(newPath); err == nil || !os.IsNotExist(err) {
+				return errors.New("Destination file already exists")
+			}
+			err = os.Rename(p.Path, newPath)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

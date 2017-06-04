@@ -82,7 +82,7 @@ func checkDBRecord(fh *FileHashes, record *FileMetadata) (bool, error) {
 	f, err := os.Stat(record.Path)
 	if os.IsNotExist(err) {
 		log.Warningf("File not found %s\n", record.Path)
-		return false, nil
+		return true, nil
 	} else if err != nil {
 		return false, err
 	}
