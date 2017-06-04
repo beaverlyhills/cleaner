@@ -3,7 +3,9 @@ A Go experiment to deal with duplicates
 
 ## Usage example
 Sample command to find and move duplicates:
-> cleaner -db dropbox.txt -compact -masters "F:\Dropbox\Video" -duplicates "F:\Dropbox\Stuff" -move "F:\Dropbox.removed" -prefix "F:\Dropbox" -apply "F:\Dropbox"
+```
+cleaner -db dropbox.txt -compact -masters "F:\Dropbox\Video" -duplicates "F:\Dropbox\Stuff" -move "F:\Dropbox.removed" -prefix "F:\Dropbox" -apply "F:\Dropbox"
+```
 Arguments:
 * `-db dropbox.txt` - database file path.
 * `-compact` - compress database file when changes to files are detected. Default behavior is to append updates.
