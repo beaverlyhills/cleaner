@@ -20,8 +20,8 @@ func main() {
 	var removePrefix string
 	flag.StringVar(&dbFile, "db", "cache.txt", "Database file path, default value is cache.txt")
 	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted and changed records)")
-	flag.StringVar(&folderToScanForDuplicates, "duplicates", "", "Show duplicates in specified folder from database, implies -dups")
-	flag.StringVar(&folderToScanForMasters, "masters", "", "Show duplicates with masters in specified folder from database, implies -dups")
+	flag.StringVar(&folderToScanForDuplicates, "duplicates", "", "Search duplicates in specified folder from database, implies -dups")
+	flag.StringVar(&folderToScanForMasters, "masters", "", "Search duplicates with masters in specified folder from database (use same path in -duplicates to only look inside specified path), implies -dups")
 	flag.StringVar(&moveDuplicatesTo, "move", "", "Move duplicates into specified folder preserving their relative paths, implies -dups")
 	flag.StringVar(&removePrefix, "prefix", "", "Prefix to remove when moving duplicates")
 	flag.BoolVar(&searchForDuplicates, "dups", false, "Scan for duplicates")

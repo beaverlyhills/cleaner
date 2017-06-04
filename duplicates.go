@@ -157,7 +157,7 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 					matchType = "Image Match"
 				}
 				log.Debugf("Duplicate File: %s (%s, Shot: %s, Created: %s, Modified: %s)\n", p.Path, matchType, p.DateShot, p.Created, p.Modified)
-				if len(masterPrefix) > 0 && strings.HasPrefix(p.Path, masterPrefix) {
+				if len(masterPrefix) > 0 && strings.HasPrefix(p.Path, masterPrefix) && masterPrefix != duplicatePrefix {
 					fmt.Printf("!   Duplicate is in master directory: %s\n", p.Path)
 				} else if len(duplicatePrefix) > 0 && !strings.HasPrefix(p.Path, duplicatePrefix) {
 					fmt.Printf("!   Duplicate outside duplicates directory: %s\n", p.Path)
