@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-func visitFunc(dbFile string, fh *fileHashes) filepath.WalkFunc {
+func visitFunc(fh *FileHashes) filepath.WalkFunc {
 	return func(path string, f os.FileInfo, err error) error {
 		if f == nil || f.IsDir() {
 			return nil
@@ -24,9 +24,7 @@ func visitFunc(dbFile string, fh *fileHashes) filepath.WalkFunc {
 		}
 		log.Debugf("Adding %s\n", record.Path)
 		addRecord(fh, record)
-		if len(dbFile) > 0 {
-			addFileToDB(dbFile, record)
-		}
+		addFileToDB(fh, record)
 		return nil
 	}
 }
@@ -54,4 +52,50 @@ func getFileRecord(path string, f os.FileInfo, record *FileMetadata) (*FileMetad
 
 func checkRecord(f os.FileInfo, record *FileMetadata) bool {
 	return !f.IsDir() && f.Size() == record.Size && getCreationTime(f) == record.Created && f.ModTime() == record.Modified && len(record.FileHash) > 0
+}
+
+// ReadDB reads cache database, checks and refreshes outdated file records
+func ReadDB(dbPath string, compact bool) (*FileHashes, error) {
+	return readDB(dbPath, compact, checkDBRecord, defaultPath)
+}
+
+// ScanFolders scans specified paths and adds them to database
+func ScanFolders(folders []string, fh *FileHashes) error {
+	log.Infof("Scanning paths\n")
+	for _, path := range folders {
+		path, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		log.Infof("Scanning %s\n", path)
+		err = filepath.Walk(path, visitFunc(fh))
+		if err != nil {
+			return err
+		}
+		log.Infof("Finished scanning %s\n", path)
+	}
+	log.Infof("Finished scanning all paths\n")
+	return nil
+}
+
+func checkDBRecord(fh *FileHashes, record *FileMetadata) (bool, error) {
+	f, err := os.Stat(record.Path)
+	if os.IsNotExist(err) {
+		log.Warningf("File not found %s\n", record.Path)
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if checkRecord(f, record) {
+		return defaultAdd(fh, record)
+	}
+	log.Debugf("Refreshing changed file %s\n", record.Path)
+	record, err = getFileRecord(record.Path, f, record)
+	if err != nil {
+		return false, err
+	}
+	log.Debugf("Adding refreshed %s\n", record.Path)
+	addRecord(fh, record)
+	addFileToDB(fh, record)
+	return true, nil
 }
