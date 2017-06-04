@@ -10,6 +10,7 @@ import (
 func pickMaster(dups map[*FileMetadata]bool, duplicatePrefix string, masterPrefix string) *FileMetadata {
 	var master *FileMetadata
 	for d := range dups {
+		log.Debugf("Master candidate %s\n", d.Path)
 		if master == nil {
 			master = d
 		} else if strings.HasPrefix(d.Path, masterPrefix) != strings.HasPrefix(master.Path, masterPrefix) {
@@ -22,17 +23,27 @@ func pickMaster(dups map[*FileMetadata]bool, duplicatePrefix string, masterPrefi
 			if strings.HasPrefix(master.Path, duplicatePrefix) {
 				master = d
 			}
-		} else if d.Size > master.Size {
+		} else if d.Size != master.Size {
 			// Picking larger files since they most likely have more metadata with same image data
-			master = d
-		} else if !d.DateShot.IsZero() && (master.DateShot.IsZero() || d.DateShot.Unix() < master.DateShot.Unix()) {
+			if d.Size > master.Size {
+				master = d
+			}
+		} else if !d.DateShot.IsZero() && (master.DateShot.IsZero() || d.DateShot.Unix() != master.DateShot.Unix()) {
 			// Pick earliest shooting date
-			master = d
-		} else if d.Modified.Unix() < master.Modified.Unix() {
+			if master.DateShot.IsZero() || d.DateShot.Unix() < master.DateShot.Unix() {
+				master = d
+			}
+		} else if d.Modified.Unix() != master.Modified.Unix() {
 			// For copied files modification date would be more accurate than creation date
-			master = d
-		} else if d.Created.Unix() < master.Created.Unix() {
-			master = d
+			// Pick file that was modified earlier
+			if d.Modified.Unix() < master.Modified.Unix() {
+				master = d
+			}
+		} else if d.Created.Unix() != master.Created.Unix() {
+			// Pick file that is older
+			if d.Created.Unix() < master.Created.Unix() {
+				master = d
+			}
 		}
 	}
 	return master
@@ -169,7 +180,12 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 	return result, nil
 }
 
-func moveDuplicates(moveDuplicatesTo string, dups map[*FileMetadata][]*FileMetadata) error {
+// MoveDuplicates moves found duplicates to destination folder with preserving relative path
+func MoveDuplicates(moveDuplicatesTo string, dups map[*FileMetadata][]*FileMetadata) error {
+	moveDuplicatesTo, err := filepath.Abs(moveDuplicatesTo)
+	if err != nil {
+		return err
+	}
 	for _, list := range dups {
 		for _, p := range list {
 			var relPath string
