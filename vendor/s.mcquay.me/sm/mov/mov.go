@@ -41,6 +41,9 @@ func times(file io.ReadSeeker) (time.Time, time.Time, error) {
 			break
 		} else {
 			atomSize := binary.BigEndian.Uint32(buf[:])
+			if atomSize < 8 {
+				return c, m, errors.New("Invalid atom size")
+			}
 			file.Seek(int64(atomSize)-8, 1)
 		}
 	}
