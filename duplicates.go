@@ -9,75 +9,75 @@ import (
 )
 
 // Pick oldest files, unless it's an image with larger size
-func pickMaster(dups map[*FileMetadata]bool, duplicatePrefix string, masterPrefix string) *FileMetadata {
-	var master *FileMetadata
-	for d := range dups {
-		log.Debugf("Master candidate %s\n", d.Path)
-		if master == nil {
-			master = d
-		} else if strings.HasPrefix(d.Path, masterPrefix) != strings.HasPrefix(master.Path, masterPrefix) {
+func pickMaster(candidates map[*FileMetadata]bool, duplicatePrefix string, masterPrefix string) *FileMetadata {
+	var selected *FileMetadata
+	for candidate := range candidates {
+		log.Debugf("Master candidate %s\n", candidate.Path)
+		if selected == nil {
+			selected = candidate
+		} else if strings.HasPrefix(candidate.Path, masterPrefix) != strings.HasPrefix(selected.Path, masterPrefix) {
 			// Pick master inside masters folder
-			if !strings.HasPrefix(master.Path, masterPrefix) {
-				master = d
+			if !strings.HasPrefix(selected.Path, masterPrefix) {
+				selected = candidate
 			}
-		} else if strings.HasPrefix(d.Path, duplicatePrefix) != strings.HasPrefix(master.Path, duplicatePrefix) {
+		} else if strings.HasPrefix(candidate.Path, duplicatePrefix) != strings.HasPrefix(selected.Path, duplicatePrefix) {
 			// Pick master outside of searched folder
-			if strings.HasPrefix(master.Path, duplicatePrefix) {
-				master = d
+			if strings.HasPrefix(selected.Path, duplicatePrefix) {
+				selected = candidate
 			}
-		} else if d.Size != master.Size {
+		} else if candidate.Size != selected.Size {
 			// Picking larger files since they most likely have more metadata with same image data
-			if d.Size > master.Size {
-				master = d
+			if candidate.Size > selected.Size {
+				selected = candidate
 			}
-		} else if !d.DateShot.IsZero() && (master.DateShot.IsZero() || d.DateShot.Unix() != master.DateShot.Unix()) {
+		} else if !candidate.DateShot.IsZero() && (selected.DateShot.IsZero() || candidate.DateShot.Unix() != selected.DateShot.Unix()) {
 			// Pick earliest shooting date
-			if master.DateShot.IsZero() || d.DateShot.Unix() < master.DateShot.Unix() {
-				master = d
+			if selected.DateShot.IsZero() || candidate.DateShot.Unix() < selected.DateShot.Unix() {
+				selected = candidate
 			}
-		} else if d.Modified.Unix() != master.Modified.Unix() {
+		} else if candidate.Modified.Unix() != selected.Modified.Unix() {
 			// For copied files modification date would be more accurate than creation date
 			// Pick file that was modified earlier
-			if d.Modified.Unix() < master.Modified.Unix() {
-				master = d
+			if candidate.Modified.Unix() < selected.Modified.Unix() {
+				selected = candidate
 			}
-		} else if d.Created.Unix() != master.Created.Unix() {
+		} else if candidate.Created.Unix() != selected.Created.Unix() {
 			// Pick file that is older
-			if d.Created.Unix() < master.Created.Unix() {
-				master = d
+			if candidate.Created.Unix() < selected.Created.Unix() {
+				selected = candidate
 			}
 		}
 	}
-	return master
+	return selected
 }
 
-func getDupsForFile(r *FileMetadata, visited map[string]*FileMetadata, prefix string, files []*FileMetadata, dups map[*FileMetadata]bool) {
+func getDupsForFile(record *FileMetadata, visited map[string]*FileMetadata, prefix string, filesWithSameHash []*FileMetadata, foundDups map[*FileMetadata]bool) {
 	found := false
-	if len(files) > 1 {
-		for _, d := range files {
-			if !strings.HasPrefix(d.Path, prefix) {
+	if len(filesWithSameHash) > 1 {
+		for _, dupPath := range filesWithSameHash {
+			if !strings.HasPrefix(dupPath.Path, prefix) {
 				continue
 			}
-			if visited[d.Path] != nil {
+			if visited[dupPath.Path] != nil {
 				continue
 			}
-			if d == r {
+			if dupPath == record {
 				continue
 			}
-			if _, ok := dups[d]; ok {
+			if _, ok := foundDups[dupPath]; ok {
 				continue
 			}
-			if r.FileHash == d.FileHash {
-				log.Debugf("Found exact duplicate %s\n", d.Path)
+			if record.FileHash == dupPath.FileHash {
+				log.Debugf("Found exact duplicate %s\n", dupPath.Path)
 			} else {
-				log.Debugf("Found image duplicate %s\n", d.Path)
+				log.Debugf("Found image duplicate %s\n", dupPath.Path)
 			}
-			dups[d] = true
+			foundDups[dupPath] = true
 			found = true
 		}
 	}
 	if found {
-		dups[r] = true
+		foundDups[record] = true
 	}
 }
 
@@ -112,15 +112,15 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 	} else {
 		log.Infof("Searching for duplicates across all db\n")
 	}
-	for p, r := range fh.files {
-		if visited[p] != nil {
+	for path, record := range fh.files {
+		if visited[path] != nil {
 			continue
 		}
 		if len(masterPrefix) > 0 {
-			if !strings.HasPrefix(p, masterPrefix) {
+			if !strings.HasPrefix(path, masterPrefix) {
 				continue
 			}
-		} else if len(duplicatePrefix) > 0 && !strings.HasPrefix(p, duplicatePrefix) {
+		} else if len(duplicatePrefix) > 0 && !strings.HasPrefix(path, duplicatePrefix) {
 			continue
 		}
 		prefix := ""
@@ -132,45 +132,47 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 			// Find masters anywhere given file in duplicates directory
 		}
 		if len(prefix) > 0 {
-			log.Debugf("Looking for duplicates of %s in %s\n", r.Path, prefix)
+			log.Debugf("Looking for duplicates of %s in %s\n", record.Path, prefix)
 		} else {
-			log.Debugf("Looking for duplicates of %s\n", r.Path)
+			log.Debugf("Looking for duplicates of %s\n", record.Path)
 		}
-		getDupsForFile(r, visited, prefix, fh.hashes[r.FileHash], dups)
-		if len(r.ImageHash) > 0 {
-			getDupsForFile(r, visited, prefix, fh.hashes[r.ImageHash], dups)
+		getDupsForFile(record, visited, prefix, fh.hashes[record.FileHash], dups)
+		if len(record.ImageHash) > 0 {
+			getDupsForFile(record, visited, prefix, fh.hashes[record.ImageHash], dups)
 		}
 		if len(dups) > 0 {
 			var master *FileMetadata
+			// Add record itself to dup candidates
+			dups[record] = true
 			master = pickMaster(dups, duplicatePrefix, masterPrefix)
 			log.Debugf("Picked master: %s (Shot: %s, Created: %s, Modified: %s)\n", master.Path, master.DateShot, master.Created, master.Modified)
 			fmt.Printf("* Duplicates for: %s\n", master.Path)
 			resultDups := make([]*FileMetadata, 0)
 			visited[master.Path] = master
-			for p := range dups {
-				if p == master {
+			for dup := range dups {
+				if dup == master {
 					continue
 				}
-				strict := master.FileHash == p.FileHash
+				isStrictMatch := master.FileHash == dup.FileHash
 				matchType := "Strict Match"
-				if !strict {
+				if !isStrictMatch {
 					matchType = "Image Match"
 				}
-				log.Debugf("Duplicate File: %s (%s, Shot: %s, Created: %s, Modified: %s)\n", p.Path, matchType, p.DateShot, p.Created, p.Modified)
-				if len(masterPrefix) > 0 && strings.HasPrefix(p.Path, masterPrefix) && masterPrefix != duplicatePrefix {
-					fmt.Printf("!   Duplicate is in master directory: %s\n", p.Path)
-				} else if len(duplicatePrefix) > 0 && !strings.HasPrefix(p.Path, duplicatePrefix) {
-					fmt.Printf("!   Duplicate outside duplicates directory: %s\n", p.Path)
+				log.Debugf("Duplicate File: %s (%s, Shot: %s, Created: %s, Modified: %s)\n", dup.Path, matchType, dup.DateShot, dup.Created, dup.Modified)
+				if len(masterPrefix) > 0 && strings.HasPrefix(dup.Path, masterPrefix) && masterPrefix != duplicatePrefix {
+					fmt.Printf("!   Duplicate is in master directory: %s\n", dup.Path)
+				} else if len(duplicatePrefix) > 0 && !strings.HasPrefix(dup.Path, duplicatePrefix) {
+					fmt.Printf("!   Duplicate outside duplicates directory: %s\n", dup.Path)
 				} else if len(masterPrefix) > 0 && !strings.HasPrefix(master.Path, masterPrefix) {
-					fmt.Printf("!   Master is outside of master directory: %s\n", p.Path)
+					fmt.Printf("!   Master is outside of master directory: %s\n", dup.Path)
 				} else {
-					if !strict {
-						fmt.Printf("?   Image duplicate: %s\n", p.Path)
+					if !isStrictMatch {
+						fmt.Printf("?   Image duplicate: %s\n", dup.Path)
 					} else {
-						fmt.Printf("    %s\n", p.Path)
-						visited[p.Path] = p
+						fmt.Printf("    %s\n", dup.Path)
+						visited[dup.Path] = dup
 					}
-					resultDups = append(resultDups, p)
+					resultDups = append(resultDups, dup)
 				}
 			}
 			if len(resultDups) > 0 {
@@ -213,7 +215,7 @@ func MoveDuplicates(moveDuplicatesTo string, removePrefix string, dups map[*File
 			log.Debugf("Destination folder: %s\n", newDir)
 			newPath := fmt.Sprintf("%s%c%s", filepath.Clean(moveDuplicatesTo), filepath.Separator, relPath)
 			log.Debugf("Destination path: %s\n", newPath)
-			fmt.Printf("Moving %s to %s\n", p.Path, newPath)
+			fmt.Printf("%011d Moving %s to %s\n", p.Size, p.Path, newPath)
 			if _, err := os.Stat(p.Path); os.IsNotExist(err) {
 				// Most likely we already moved this duplicate
 				log.Warningf("File does not exist %s\n", p.Path)

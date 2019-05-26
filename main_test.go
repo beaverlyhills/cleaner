@@ -10,6 +10,7 @@ import (
 func BenchmarkWalkFile(b *testing.B) {
 	logging.SetLevel(logging.WARNING, "cleaner")
 	for n := 0; n < b.N; n++ {
-		filepath.Walk("samples/sample.jpg", visitFunc("", make(map[string]*FileMetadata), make(map[string][]*FileMetadata)))
+		fh := &FileHashes{dbPath: "", files: make(map[string]*FileMetadata), hashes: make(map[string][]*FileMetadata)}
+		filepath.Walk("samples/sample.jpg", makeWalkFunc(fh))
 	}
 }

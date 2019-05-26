@@ -24,7 +24,9 @@ type FileMetadata struct {
 // FileHashes holds database records
 type FileHashes struct {
 	dbPath string
+	// Map of file records by their path
 	files  map[string]*FileMetadata
+	// Map of lists of file records by their hash
 	hashes map[string][]*FileMetadata
 }
 
@@ -111,7 +113,7 @@ type addFn func(fh *FileHashes, record *FileMetadata) (bool, error)
 
 type updatePathFn func(record *FileMetadata) (bool, error)
 
-func defaultPath(record *FileMetadata) (bool, error) {
+func updateToAbsolutePath(record *FileMetadata) (bool, error) {
 	newPath, err := filepath.Abs(record.Path)
 	if err != nil {
 		return false, err
@@ -124,14 +126,13 @@ func defaultPath(record *FileMetadata) (bool, error) {
 	return updated, nil
 }
 
-func defaultAdd(fh *FileHashes, record *FileMetadata) (bool, error) {
+func replaceLatestRecord(fh *FileHashes, record *FileMetadata) (bool, error) {
 	needsCompacting := false
 	if fh.files[record.Path] != nil {
 		log.Debugf("Overwriting older record for %s\n", record.Path)
 		removeRecord(fh, fh.files[record.Path])
 		needsCompacting = true
 	}
-	log.Debugf("Restored metadata for %s\n", record.Path)
 	addRecord(fh, record)
 	return needsCompacting, nil
 }
