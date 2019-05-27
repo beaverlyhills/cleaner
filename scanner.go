@@ -3,28 +3,59 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"sync"
 )
 
-func makeWalkFunc(fh *FileHashes) filepath.WalkFunc {
+type scanInfo struct {
+	path           string
+	f              os.FileInfo
+	existingRecord *FileMetadata
+}
+
+func makeParserWorker(wg *sync.WaitGroup, jobs <-chan *scanInfo, results chan<- *FileMetadata) {
+	for j := range jobs {
+		record, err := parseFileMetadata(j.path, j.f, j.existingRecord)
+		if err == nil {
+			results <- record
+		} else {
+			wg.Done()
+		}
+	}
+}
+
+func makeAdderWorker(results <-chan *FileMetadata, fh *FileHashes) {
+	for record := range results {
+		addParsedFileRecord(fh, record)
+		fh.wg.Done()
+	}
+}
+
+func addParsedFileRecord(fh *FileHashes, record *FileMetadata) {
+	fh.lock.Lock()
+	defer fh.lock.Unlock()
+	log.Debugf("Adding %s\n", record.Path)
+	addRecord(fh, record)
+	addFileToDB(fh, record)
+}
+
+func makeWalkFunc(jobs chan<- *scanInfo, fh *FileHashes) filepath.WalkFunc {
 	return func(path string, f os.FileInfo, err error) error {
 		if f == nil || f.IsDir() {
 			return nil
 		}
+		fh.lock.Lock()
 		record := fh.files[path]
 		if record != nil {
 			if checkFileDidNotChange(f, record) {
+				fh.lock.Unlock()
 				return nil
 			}
 			log.Warningf("Metadata changed for %s\n", path)
 			removeRecord(fh, record)
 		}
-		record, err = parseFileMetadata(path, f, record)
-		if err != nil {
-			return err
-		}
-		log.Debugf("Adding %s\n", record.Path)
-		addRecord(fh, record)
-		addFileToDB(fh, record)
+		fh.lock.Unlock()
+		jobs <- &scanInfo{path: path, f: f, existingRecord: record}
+		fh.wg.Add(1)
 		return nil
 	}
 }
@@ -61,9 +92,15 @@ func ReadDB(dbPath string, compact bool) (*FileHashes, error) {
 }
 
 // ScanFolders scans specified paths and adds them to database
-func ScanFolders(folders []string, fh *FileHashes) error {
+func ScanFolders(folders []string, fh *FileHashes, concurrency int) error {
 	log.Infof("Scanning paths\n")
-	walkFunc := makeWalkFunc(fh)
+	jobs := make(chan *scanInfo, concurrency*4)
+	results := make(chan *FileMetadata, concurrency*4)
+	for w := 0; w < concurrency; w++ {
+		go makeParserWorker(&fh.wg, jobs, results)
+	}
+	go makeAdderWorker(results, fh)
+	walkFunc := makeWalkFunc(jobs, fh)
 	for _, path := range folders {
 		path, err := filepath.Abs(path)
 		if err != nil {
@@ -76,6 +113,10 @@ func ScanFolders(folders []string, fh *FileHashes) error {
 		}
 		log.Infof("Finished scanning %s\n", path)
 	}
+	log.Debugf("Waiting for parsers to complete\n")
+	close(jobs)
+	fh.wg.Wait()
+	close(results)
 	log.Infof("Finished scanning all paths\n")
 	return nil
 }

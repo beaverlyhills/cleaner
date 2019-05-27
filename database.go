@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -25,9 +26,11 @@ type FileMetadata struct {
 type FileHashes struct {
 	dbPath string
 	// Map of file records by their path
-	files  map[string]*FileMetadata
+	files map[string]*FileMetadata
 	// Map of lists of file records by their hash
 	hashes map[string][]*FileMetadata
+	lock   sync.RWMutex
+	wg     sync.WaitGroup
 }
 
 func addFileToDB(fh *FileHashes, record *FileMetadata) error {
@@ -143,7 +146,7 @@ func readDB(dbPath string, compact bool, addRec addFn, updatePath updatePathFn) 
 		return nil, err
 	}
 	log.Infof("Reading database from %s\n", dbPath)
-	fh := &FileHashes{dbPath: dbPath, files: make(map[string]*FileMetadata), hashes: make(map[string][]*FileMetadata)}
+	fh := &FileHashes{dbPath: dbPath, files: make(map[string]*FileMetadata), hashes: make(map[string][]*FileMetadata), lock: sync.RWMutex{}, wg: sync.WaitGroup{}}
 	file, err := os.Open(dbPath)
 	if err != nil {
 		if os.IsNotExist(err) {

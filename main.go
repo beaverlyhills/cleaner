@@ -19,6 +19,7 @@ func main() {
 	var searchForDuplicates bool
 	var removePrefix string
 	var applyMove bool
+	var concurrency int
 	flag.StringVar(&dbFile, "db", "cache.txt", "Database file path, default value is cache.txt")
 	flag.BoolVar(&compactDB, "compact", false, "Compact database (remove deleted and changed records)")
 	flag.StringVar(&folderToScanForDuplicates, "duplicates", "", "Search duplicates in specified folder from database, implies -dups")
@@ -29,6 +30,7 @@ func main() {
 	flag.BoolVar(&applyMove, "apply", false, "Move duplicate files into destination directory")
 	flag.BoolVar(&silent, "silent", false, "Supress non-error logging")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
+	flag.IntVar(&concurrency, "concurrency", 2, "Parser concurrency, default is 2.")
 	flag.Parse()
 	if silent {
 		logging.SetLevel(logging.WARNING, "cleaner")
@@ -42,7 +44,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if len(flag.Args()) > 0 {
-		if err := ScanFolders(flag.Args(), fh); err != nil {
+		if err := ScanFolders(flag.Args(), fh, concurrency); err != nil {
 			log.Fatal(err)
 		}
 	}
