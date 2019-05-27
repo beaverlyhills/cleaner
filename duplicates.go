@@ -77,6 +77,7 @@ func getDupsForFile(record *FileMetadata, visited map[string]*FileMetadata, pref
 		}
 	}
 	if found {
+		// Add record itself to duplicate list
 		foundDups[record] = true
 	}
 }
@@ -142,8 +143,6 @@ func FindDuplicates(folderToScanForDuplicates string, folderToScanForMasters str
 		}
 		if len(dups) > 0 {
 			var master *FileMetadata
-			// Add record itself to dup candidates
-			dups[record] = true
 			master = pickMaster(dups, duplicatePrefix, masterPrefix)
 			log.Debugf("Picked master: %s (Shot: %s, Created: %s, Modified: %s)\n", master.Path, master.DateShot, master.Created, master.Modified)
 			fmt.Printf("* Duplicates for: %s\n", master.Path)
